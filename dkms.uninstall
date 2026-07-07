@@ -1,4 +1,4 @@
-. dkms.conf
+. ./dkms.conf
 
 su -c "
 #dkms uninstall -m $PACKAGE_NAME -v $PACKAGE_VERSION;

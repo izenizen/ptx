@@ -88,8 +88,7 @@ struct ptx_card *ptx_alloc(struct pci_dev *pdev, u8 *name, u8 adapn, u32 sz_card
 		p->priv	= sz_adap_priv ? (u8 *)&card->adap[adapn] + i * sz_adap_priv : NULL;
 	}
 	if (pci_enable_device(pdev)					||
-		pci_set_dma_mask(pdev, DMA_BIT_MASK(32))		||
-		pci_set_consistent_dma_mask(pdev, DMA_BIT_MASK(32))	||
+                dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32))     ||
 		pci_request_regions(pdev, name)) {
 		kfree(card);
 		return NULL;
@@ -127,7 +126,7 @@ void ptx_register_subdev(struct i2c_adapter *i2c, struct dvb_frontend *fe, u16 a
 		.addr		= adr,
 	};
 
-	strlcpy(info.type, name, I2C_NAME_SIZE);
+	strscpy(info.type, name, I2C_NAME_SIZE);
 	pr_info("%s %s", __func__, info.type);
 	if (request_module("%s", info.type) < 0) {
 		pr_err("%s ERROR request_module %s", __func__, info.type);

@@ -1,67 +1,24 @@
-# 通常は弄らない。dkms.conf 或いは下位 Makefile を編集して下さい。
-
-PWD ?= $(shell pwd)
 KVER ?= $(shell uname -r)
-KDIR := /lib/modules/$(KVER)
-KBUILD := $(KDIR)/build
-SRCS := $(shell find $(PWD)/drivers -name "*.c")
-HDRS := $(shell find $(PWD)/drivers -name "*.h")
-IDIR := $(sort $(dir $(HDRS))) drivers/media/dvb-core drivers/media/dvb-frontends drivers/media/tuners
-ldflags-y += -s
-ccflags-y += -O3 -Os -Wformat=2 -Wall -Werror $(addprefix -I, $(IDIR))
-MODS := $(shell eval source $(PWD)/dkms.conf; echo $${BUILT_MODULE_NAME[*]})
-DIRS := $(addprefix $(KDIR), $(shell eval source $(PWD)/dkms.conf; echo $${DEST_MODULE_LOCATION[*]}))
-DIR0 := $(firstword $(DIRS))
-DSTS := $(join $(DIRS), $(addprefix /, $(addsuffix *, $(MODS))))
-TGTS := $(addsuffix .ko, $(MODS))
-obj-m := $(TGTS:.ko=.o)
+KBUILD := /lib/modules/$(KVER)/build
 
-OBJS := $(join $(shell eval source $(PWD)/dkms.conf; echo $${DEST_MODULE_LOCATION[*]} | sed "s|/kernel/||g"), $(addprefix /, $(addsuffix .o, $(MODS))))
-$(shell echo $(join $(TGTS:.ko=-objs:=), $(OBJS)) | sed "s/ /\n/g" > $(PWD)/m~)
-$(foreach OBJ, $(OBJS), $(shell grep -s ccflags-y $(PWD)/$(dir $(OBJ))/Makefile >> $(PWD)/m~))
-$(foreach OBJ, $(OBJS), $(shell echo $(patsubst %.o, $(dir $(OBJ))%.o, $(shell grep -s $(notdir $(OBJ:.o=-objs)) $(PWD)/$(dir $(OBJ))/Makefile)) >> $(PWD)/m~))
-include $(PWD)/m~
+# DKMS環境でもすべてのサブディレクトリのヘッダーを見つけられるように絶対・相対パスを指定
+ccflags-y += -I$(src) -I$(src)/drivers/media/dvb-frontends -I$(src)/drivers/media/tuners -I$(src)/drivers/media/pci/ptx -O3 -Os -Wformat=2 -Wall
+ccflags-y += -Wno-missing-prototypes -Wno-incompatible-pointer-types -Wno-implicit-function-declaration -Wno-missing-declarations
 
-all: $(TGTS)
-#	@echo KDIR[$(KDIR)] TGTS[$(TGTS)]
-	-@$(RM) -vrf `find /lib/modules -type d -path "*pci/pt3"`
-	-@$(RM) -vf `find /lib/modules -type f -name "qm1d1c0042*"`
-	make -C $(KBUILD) M=`pwd`
-$(TGTS): $(SRCS) $(HDRS)
+# ビルド対象モジュールの定義
+obj-m += tc90522.o qm1d1c004x.o mxl301rf.o pt3.o nm131.o tda2014x.o pxq3pe.o
 
-debug:
-	@make "ccflags-y += -DDEBUG $(ccflags-y)"
+# 各モジュールを構成するオブジェクトファイル
+tc90522-objs    := drivers/media/dvb-frontends/tc90522.o
+qm1d1c004x-objs := drivers/media/tuners/qm1d1c004x.o
+mxl301rf-objs   := drivers/media/tuners/mxl301rf.o
+pt3-objs        := drivers/media/pci/ptx/pt3_pci.o drivers/media/pci/ptx/ptx_common.o
+nm131-objs      := drivers/media/tuners/nm131.o
+tda2014x-objs   := drivers/media/tuners/tda2014x.o
+pxq3pe-objs     := drivers/media/pci/ptx/pxq3pe_pci.o drivers/media/pci/ptx/ptx_common.o
 
-clean-files := *.o *.ko *.mod.[co] *~
-clean-files += $(foreach DIR, $(shell find $(PWD) -type d), $(addprefix $(DIR)/, $(clean-files)))
+all:
+	make -C $(KBUILD) M=`pwd` modules
+
 clean:
 	make -C $(KBUILD) M=`pwd` clean
-#	-@$(RM) -vf $(foreach TGT, $(TGTS), $(shell find $(KDIR) -name $(TGT)\*))
-	@$(RM) -v $(clean-files)
-
-check: clean
-	$(KBUILD)/scripts/checkpatch.pl --no-tree --show-types --ignore GCC_BINARY_CONSTANT --max-line-length=200 -f \
-		`find \( -iname "*c" -o -iname "*h" \)` | tee warns~
-	if [ -f /usr/local/smatch/smatch ] ; then \
-		make CHECK="/usr/local/smatch/smatch --full-path" CC=/usr/local/smatch/cgcc |& tee -a warns~; \
-	fi
-
-uninstall:
-	@$(RM) -vrf $(DSTS)
-
-install: uninstall all
-	install -d $(DIR0)
-	install -m 644 $(TGTS) $(DIR0)
-	depmod -a $(KVER)
-
-install_compress: install
-	. $(KBUILD)/.config ; \
-	cd $(DIR0); \
-	if [ $$CONFIG_DECOMPRESS_XZ = "y" ]; then \
-		xz -9e $(TGTS); \
-	elif [ $$CONFIG_DECOMPRESS_BZIP2 = "y" ]; then \
-		bzip2 -9 $(TGTS); \
-	elif [ $$CONFIG_DECOMPRESS_GZIP = "y" ]; then \
-		gzip -9 $(TGTS); \
-	fi
-	depmod -a $(KVER)
